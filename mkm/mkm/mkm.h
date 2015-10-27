@@ -2,22 +2,35 @@
 
 #include <mkm/product.h>
 
-#include <QScopedPointer>
+#include <QObject>
+#include <QtNetwork>
 #include <QString>
 #include <QVector>
 
 namespace mkm {
 
-class Mkm
+class Mkm : public QObject
 {
+	Q_OBJECT
 public:
-	Mkm(const QString& appToken, const QString& appSecret, const QString& accessToken, const QString& accessTokenSecret);
-	~Mkm();
+	Mkm(const QString& endpoint, const QString& appToken, const QString& appSecret, const QString& accessToken, const QString& accessTokenSecret, QObject* parent = 0);
 
-	QVector<Product> findProduct(const QString& name, int gameId = 1, int languageId = 1, bool isExact = false);
+	QNetworkAccessManager& networkAccessManager();
+
+	QVector<mkm::Product> findProduct(const QString& name, int gameId = 1, int languageId = 1, bool isExact = true);
+	QNetworkReply* findProductAsync(const QString& name, int gameId = 1, int languageId = 1, bool isExact = true);
+
 private:
-	struct Pimpl;
-	QScopedPointer<Pimpl> pimpl_;
+	void addAuthenticationHeader(const QString& method, QNetworkRequest& request);
+	QNetworkReply* get(const QString& url);
+	QByteArray waitForIt(QNetworkReply* reply);
+
+	QString endpoint_;
+	QString appToken_;
+	QString appSecret_;
+	QString accessToken_;
+	QString accessTokenSecret_;
+	QNetworkAccessManager manager_;
 };
 
 } // namespace mkm

@@ -14,11 +14,13 @@ CONFIG += staticlib
 CONFIG += c++11
 
 SOURCES += \
-    src/mkm.cpp
+    src/mkm.cpp \
+    src/parser.cpp
 
 HEADERS += \
     mkm/mkm.h \
-    mkm/product.h
+    mkm/product.h \
+    mkm/parser.h
 unix {
     target.path = /usr/lib
     INSTALLS += target
