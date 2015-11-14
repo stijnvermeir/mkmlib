@@ -15,12 +15,16 @@ CONFIG += c++11
 
 SOURCES += \
     src/mkm.cpp \
-    src/parser.cpp
+    src/parser.cpp \
+    src/exception.cpp
 
 HEADERS += \
     mkm/mkm.h \
     mkm/product.h \
-    mkm/parser.h
+    mkm/parser.h \
+    mkm/wantslist.h \
+    mkm/want.h \
+    mkm/exception.h
 unix {
     target.path = /usr/lib
     INSTALLS += target

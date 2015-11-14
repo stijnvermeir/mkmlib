@@ -1,12 +1,29 @@
 #include "mkm/mkm.h"
 #include "mkm/parser.h"
+#include "mkm/exception.h"
 
 #include <QMessageAuthenticationCode>
 #include <QEventLoop>
 #include <QScopedPointer>
+#include <QXmlStreamWriter>
 
 using namespace mkm;
 using namespace std;
+
+namespace {
+
+const QVector<QString> CONDITION_CODE =
+{
+	"MT",
+	"NM",
+	"EX",
+	"GD",
+	"LP",
+	"PL",
+	"PO"
+};
+
+} // namespace
 
 Mkm::Mkm(const QString& endpoint, const QString& appToken, const QString& appSecret, const QString& accessToken, const QString& accessTokenSecret, QObject* parent)
 	: QObject(parent)
@@ -36,6 +53,79 @@ QNetworkReply* Mkm::findProductAsync(const QString& name, int gameId, int langua
 	QTextStream str(&url);
 	str << "products/" << name << "/" << gameId << "/" << languageId << "/" << (isExact ? "true" : "false");
 	return get(url);
+}
+
+QVector<Wantslist> Mkm::getWantsLists()
+{
+	QScopedPointer<QNetworkReply> reply(getWantsListsAsync());
+	return parseWantslists(waitForIt(reply.data()));
+}
+
+QNetworkReply* Mkm::getWantsListsAsync()
+{
+	return get("wantslist");
+}
+
+QVector<Wantslist> Mkm::addWantsList(const QString& name, int gameId)
+{
+	QScopedPointer<QNetworkReply> reply(addWantsListAsync(name, gameId));
+	return parseWantslists(waitForIt(reply.data()));
+}
+
+QNetworkReply* Mkm::addWantsListAsync(const QString& name, int gameId)
+{
+	QByteArray data;
+	QXmlStreamWriter xml(&data);
+	xml.writeStartDocument();
+	xml.writeStartElement("request");
+	xml.writeStartElement("wantslist");
+	xml.writeTextElement("idGame", QString::number(gameId));
+	xml.writeTextElement("name", name);
+	xml.writeEndElement();
+	xml.writeEndElement();
+	xml.writeEndDocument();
+	return post("wantslist", data);
+}
+
+void Mkm::addWants(const int wantslistId, const QVector<Want>& wants)
+{
+	QScopedPointer<QNetworkReply> reply(addWantsAsync(wantslistId, wants));
+	parseWants(waitForIt(reply.data()));
+}
+
+QNetworkReply* Mkm::addWantsAsync(const int wantslistId, const QVector<Want>& wants)
+{
+	QByteArray data;
+	QXmlStreamWriter xml(&data);
+	xml.setAutoFormatting(true);
+	xml.writeStartDocument();
+	xml.writeStartElement("request");
+	xml.writeTextElement("action", "add");
+	for (const Want& want : wants)
+	{
+		if (want.metaProductId != 0)
+		{
+			xml.writeStartElement("metaproduct");
+			xml.writeTextElement("idMetaproduct", QString::number(want.metaProductId));
+		}
+		else
+		{
+			xml.writeStartElement("product");
+			xml.writeTextElement("idProduct", QString::number(want.productId));
+		}
+		xml.writeTextElement("count", QString::number(want.amount));
+		for (int languageId : want.languageIds)
+		{
+			xml.writeTextElement("idLanguage", QString::number(languageId));
+		}
+		xml.writeTextElement("minCondition", CONDITION_CODE[want.minCondition]);
+		xml.writeTextElement("wishPrice", QString::number(want.buyPrice));
+		xml.writeEndElement();
+	}
+	xml.writeEndElement();
+	xml.writeEndDocument();
+	// qDebug() << data;
+	return put(QString("wantslist/%1").arg(wantslistId), data);
 }
 
 void Mkm::addAuthenticationHeader(const QString& method, QNetworkRequest& request)
@@ -85,6 +175,24 @@ QNetworkReply* Mkm::get(const QString& url)
 	return manager_.get(request);
 }
 
+QNetworkReply* Mkm::post(const QString& url, const QByteArray& data)
+{
+	QNetworkRequest request;
+	request.setUrl(endpoint_ + url);
+	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/xml");
+	addAuthenticationHeader("POST", request);
+	return manager_.post(request, data);
+}
+
+QNetworkReply* Mkm::put(const QString& url, const QByteArray& data)
+{
+	QNetworkRequest request;
+	request.setUrl(endpoint_ + url);
+	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/xml");
+	addAuthenticationHeader("PUT", request);
+	return manager_.put(request, data);
+}
+
 QByteArray Mkm::waitForIt(QNetworkReply* reply)
 {
 	QEventLoop loop;
@@ -92,7 +200,12 @@ QByteArray Mkm::waitForIt(QNetworkReply* reply)
 	loop.exec();
 	if (reply->error())
 	{
-		qDebug() << reply->error() << reply->errorString();
+		MkmException::ErrorCode errorCode = MkmException::ErrorUnknown;
+		if (reply->error() == QNetworkReply::AuthenticationRequiredError)
+		{
+			errorCode = MkmException::ErrorAuthentication;
+		}
+		throw MkmException(errorCode, reply->errorString(), QString::fromUtf8(reply->readAll()));
 	}
 	return reply->readAll();
 }
